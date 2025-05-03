@@ -1,10 +1,12 @@
 package br.ufal.ic.p2.jackut;
 
 import br.ufal.ic.p2.jackut.models.exceptions.*;
-import br.ufal.ic.p2.jackut.models.entities.*;
+import br.ufal.ic.p2.jackut.models.exceptions.RelacionamentoExceptions.*;
+import br.ufal.ic.p2.jackut.services.*;
 
 import java.io.*;
-import java.util.*;
+import java.util.List;
+import java.util.Set;
 
 /**
  * Classe Facade que gerencia usuários, sessões, amizades e mensagens no sistema Jackut.
@@ -14,224 +16,168 @@ public class Facade implements Serializable {
     private static final long serialVersionUID = 1L;
     private static final String DATA_FILE = "jackut_data.ser";
 
-    /**
-     * Mapa que armazena os usuários cadastrados, associando o login ao objeto Usuario.
-     */
-    Map<String, Usuario> usuarios = new HashMap<>();
+    private UsuarioService usuarioService;
+    private SessaoService sessaoService;
+    private AmizadeService amizadeService;
+    private RecadoService recadoService;
+    private ComunidadeService comunidadeService;
+    private RelacionamentoService relacionamentoService;
+    private MensagemService mensagemService;
+    private RemoverService removerService;
 
-    /**
-     * Mapa que gerencia as sessões ativas, associando um identificador de sessão ao objeto Usuario.
-     */
-    Map<String, Usuario> sessoes = new HashMap<>();
-
-    /**
-     * Construtor da Facade, que carrega os dados do sistema.
-     */
     public Facade() {
-        carregarEstado();
+        this.usuarioService = new UsuarioService();
+        this.sessaoService = new SessaoService(usuarioService);
+
+// primeiro crie os objetos com dependências mínimas
+        this.recadoService = new RecadoService(usuarioService, sessaoService); // sem relacionamento por agora
+        this.relacionamentoService = new RelacionamentoService(usuarioService, sessaoService); // idem
+
+// depois conecte os dois manualmente
+        this.recadoService.setRelacionamentoService(relacionamentoService);
+        this.relacionamentoService.setRecadoService(recadoService);
+
+// agora pode instanciar os outros
+        this.comunidadeService = new ComunidadeService(usuarioService, sessaoService);
+        this.amizadeService = new AmizadeService(usuarioService, sessaoService, relacionamentoService);
+        this.mensagemService = new MensagemService(comunidadeService, sessaoService);
+
+        this.removerService = new RemoverService(usuarioService, amizadeService, recadoService, comunidadeService, relacionamentoService, mensagemService, sessaoService);
+
     }
 
     /**
      * Reseta o sistema, apagando todos os usuários cadastrados.
      */
     public void zerarSistema() {
-        usuarios.clear();
-        sessoes.clear();
-        salvarEstado();
-    }
-    /**
-     * Salva o estado atual do sistema em um arquivo.
-     */
-    public void salvarEstado() {
-        try (ObjectOutputStream out = new ObjectOutputStream(new FileOutputStream(DATA_FILE))) {
-            out.writeObject(usuarios);
-            out.writeObject(sessoes);
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
-    }
-
-    /**
-     * Carrega o estado salvo do sistema, se existir.
-     */
-    @SuppressWarnings("unchecked")
-    private void carregarEstado() {
-        try (ObjectInputStream in = new ObjectInputStream(new FileInputStream(DATA_FILE))) {
-            usuarios = (Map<String, Usuario>) in.readObject();
-            sessoes = (Map<String, Usuario>) in.readObject();
-        } catch (IOException | ClassNotFoundException e) {
-            // Se o arquivo não existir ou houver erro, inicializa os mapas vazios
-            usuarios = new HashMap<>();
-            sessoes = new HashMap<>();
-        }
+        usuarioService.zerar();
+        recadoService.zerar();
+        comunidadeService.zerar();
+        amizadeService.zerar();
+        relacionamentoService.zerar();
+        mensagemService.zerar();
     }
 
     /**
      * Encerra o sistema e persiste os dados.
      */
     public void encerrarSistema() {
-        salvarEstado();
+        usuarioService.saveUsuariosToFile();
+        recadoService.saveRecadosToFile();
+        comunidadeService.saveComunidadesToFile();
+        amizadeService.saveAmizadesToFile();
+        relacionamentoService.saveRelacionamentoToFile();
+        mensagemService.saveMensagensToFile();
     }
 
-    /**
-     * Retorna um atributo específico do usuário.
-     *
-     * @param login    O login do usuário.
-     * @param atributo O atributo desejado (ex: "nome", "senha").
-     * @return O valor do atributo solicitado.
-     * @throws UsuarioException Se o usuário não for encontrado ou o atributo não estiver preenchido.
-     */
     public String getAtributoUsuario(String login, String atributo) throws UsuarioException {
-        Usuario usuario = usuarios.get(login);
-        if (usuario == null) {
-            throw new UsuarioNaoCadastradoException();
-        }
-
-        switch (atributo) {
-            case "nome":
-                return usuario.getNome();
-            case "senha":
-                return usuario.getSenha();
-            default:
-                return usuario.getAtributo(atributo);
-        }
+        return usuarioService.getAtributoUsuario(login, atributo);
     }
 
-    /**
-     * Cria um novo usuário no sistema.
-     *
-     * @param login O login do usuário.
-     * @param senha A senha do usuário.
-     * @param nome  O nome do usuário.
-     * @throws UsuarioException Se o login já estiver cadastrado.
-     */
     public void criarUsuario(String login, String senha, String nome) throws UsuarioException {
-        if (usuarios.containsKey(login)) {
-            throw new ContaJaExisteNomeException();
-        }
-        usuarios.put(login, new Usuario(login, senha, nome));
+        usuarioService.criarUsuario(login, senha, nome);
     }
 
-    /**
-     * Abre uma sessão para um usuário autenticado.
-     *
-     * @param login O login do usuário.
-     * @param senha A senha do usuário.
-     * @return O identificador da sessão.
-     * @throws UsuarioException Se o login ou senha forem inválidos.
-     */
-    public String abrirSessao(String login, String senha) throws UsuarioException {
-        Usuario usuario = usuarios.get(login);
-        if (usuario == null || !usuario.getSenha().equals(senha)) {
-            throw new LoginSenhaInvalidosException();
-        }
-
-        String idSessao = UUID.randomUUID().toString(); // Melhor segurança
-        sessoes.put(idSessao, usuario);
-        return idSessao;
+    public String abrirSessao(String login, String senha) throws LoginSenhaInvalidosException, UsuarioNaoCadastradoException {
+        return sessaoService.abrirSessao(login, senha);
     }
 
-    /**
-     * Edita o perfil de um usuário.
-     *
-     * @param idSessao Identificador da sessão do usuário.
-     * @param atributo Nome do atributo a ser modificado.
-     * @param valor    Novo valor do atributo.
-     * @throws UsuarioException Se o usuário não for encontrado.
-     */
     public void editarPerfil(String idSessao, String atributo, String valor) throws UsuarioException {
-        Usuario usuario = sessoes.get(idSessao);
-        if (usuario == null) {
-            throw new UsuarioNaoCadastradoException();
-        }
-        usuario.setAtributo(atributo, valor);
+        sessaoService.editarPerfil(idSessao, atributo, valor);
     }
 
-    /**
-     * Verifica se dois usuários são amigos.
-     *
-     * @param login      Login do primeiro usuário.
-     * @param loginAmigo Login do possível amigo.
-     * @return true se forem amigos, false caso contrário.
-     */
-    public boolean ehAmigo(String login, String loginAmigo) {
-        Usuario usuario = usuarios.get(login);
-        return usuario != null && usuario.getAmigos().contains(loginAmigo);
+    public void adicionarAmigo(String idSessao, String amigo) throws UsuarioException, UsuarioEhSeuInimigoException {
+        amizadeService.adicionarAmigo(idSessao, amigo);
     }
 
-    /**
-     * Adiciona um amigo para um usuário.
-     *
-     * @param idSessao   Identificador da sessão do usuário.
-     * @param loginAmigo Login do amigo a ser adicionado.
-     * @throws UsuarioException Se o usuário ou amigo não existirem, ou se já forem amigos.
-     */
-    public void adicionarAmigo(String idSessao, String loginAmigo) throws UsuarioException {
-        Usuario usuario = sessoes.get(idSessao);
-        Usuario amigo = usuarios.get(loginAmigo);
-
-        if (usuario == null || amigo == null) {
-            throw new UsuarioNaoCadastradoException();
-        }
-
-        if (loginAmigo.equals(usuario.getLogin())) {
-            throw new UsuarioNaoPodeAdicionarASiMesmoException();
-        }
-
-        if (usuario.getAmigos().contains(loginAmigo)) {
-            throw new UsuarioJahehAmigoException();
-        }
-
-        usuario.enviarConvite(loginAmigo);
-        amigo.receberConvite(usuario.getLogin());
+    public boolean ehAmigo(String login, String amigo) throws UsuarioException {
+        return amizadeService.ehAmigo(login, amigo);
     }
 
-    /**
-     * Retorna a lista de amigos de um usuário.
-     *
-     * @param login Login do usuário.
-     * @return String formatada com a lista de amigos.
-     */
-    public String getAmigos(String login) {
-        Usuario usuario = usuarios.get(login);
-        return usuario == null ? "{}" : "{" + String.join(",", usuario.getAmigos()) + "}";
+    public String getAmigos(String login) throws UsuarioException {
+        Set<String> amigos =  amizadeService.getAmigos(login);
+        return amigos.isEmpty() ? "{}" : "{" + String.join(",", amigos) + "}";
     }
 
-    /**
-     * Envia um recado para outro usuário.
-     *
-     * @param idSessao         Identificador da sessão do remetente.
-     * @param loginDestinatario Login do destinatário.
-     * @param mensagem         Mensagem a ser enviada.
-     * @throws UsuarioException Se o remetente ou destinatário não existirem.
-     */
-    public void enviarRecado(String idSessao, String loginDestinatario, String mensagem) throws UsuarioException {
-        Usuario remetente = sessoes.get(idSessao);
-        Usuario destinatario = usuarios.get(loginDestinatario);
-
-        if (remetente == null || destinatario == null) {
-            throw new UsuarioNaoCadastradoException();
-        }
-
-        if (remetente.getLogin().equals(loginDestinatario)) {
-            throw new UsuarioNaoPodeEnviarRecadoParaSiMesmoException();
-        }
-
-        destinatario.receberMensagem(remetente.getLogin(), mensagem);
+    public void enviarRecado(String idSessao, String destinatario, String recado) throws UsuarioException, UsuarioEhSeuInimigoException {
+        recadoService.enviarRecado(idSessao, destinatario, recado);
     }
 
-    /**
-     * Lê os recados de um usuário.
-     *
-     * @param idSessao Identificador da sessão do usuário.
-     * @return Recados do usuário.
-     * @throws NaoHaRecadosException Se o usuário não tiver recados.
-     */
     public String lerRecado(String idSessao) throws UsuarioException {
-        Usuario usuario = sessoes.get(idSessao);
-        if (usuario == null) {
-            throw new NaoHaRecadosException();
-        }
-        return usuario.getRecados();
+        return recadoService.lerRecado(idSessao);
     }
+
+    public void criarComunidade(String idSessao, String nome, String descricao) throws UsuarioException, ComunidadeNomeExisteException {
+        comunidadeService.criarComunidade(idSessao, nome, descricao);
+    }
+
+    public String getDescricaoComunidade(String nomeComunidade) throws ComunidadeNaoExisteException {
+        return comunidadeService.getDescricaoComunidade(nomeComunidade);
+    }
+
+    public String getDonoComunidade(String nomeComunidade) throws ComunidadeNaoExisteException {
+        return comunidadeService.getDonoComunidade(nomeComunidade);
+    }
+
+    public String getMembrosComunidade(String nomeComunidade) throws ComunidadeNaoExisteException {
+        Set<String> membrosComunidade = comunidadeService.getMembrosComunidade(nomeComunidade);
+        return membrosComunidade.isEmpty() ? "{}" : "{" + String.join(",", membrosComunidade) + "}";
+    }
+
+    public String getComunidades(String login) throws UsuarioNaoCadastradoException {
+        List<String> comunidadesDoUsuario = comunidadeService.getComunidades(login);
+
+        return comunidadesDoUsuario.isEmpty() ? "{}" : "{" + String.join(",", comunidadesDoUsuario) + "}";
+    }
+
+    public void adicionarComunidade(String idSessao, String nome) throws UsuarioException, ComunidadeNaoExisteException, UsuarioJaFazParteComunidadeException {
+        comunidadeService.adicionarComunidade(idSessao, nome);
+    }
+
+    public String lerMensagem(String idSessao) throws UsuarioException {
+        return mensagemService.lerMensagem(idSessao);
+    }
+
+    public void enviarMensagem(String idSessao, String comunidade, String mensagem) throws UsuarioException, ComunidadeNaoExisteException {
+        mensagemService.enviarMensagem(idSessao, comunidade, mensagem);
+    }
+
+
+    public boolean ehFa(String login, String idolo) {
+        return relacionamentoService.ehFa(login, idolo);
+    }
+
+    public void adicionarIdolo(String idSessao, String nome) throws UsuarioException, UsuarioEhSeuInimigoException {
+        relacionamentoService.adicionarIdolo(idSessao, nome);
+    }
+
+    public String getFas(String login) {
+        Set<String> fas = relacionamentoService.getFas(login);
+        return fas.isEmpty() ? "{}" : "{" + String.join(",", fas) + "}";
+    }
+
+    public boolean ehPaquera(String idSessao, String paquera) throws UsuarioException {
+        return relacionamentoService.ehPaquera(idSessao, paquera);
+    }
+
+    public void adicionarPaquera(String idSessao, String paquera) throws UsuarioException, UsuarioJaEstaAdicionadoComoPaqueraException, UsuarioNaoPodeSerPaqueraDeSiMesmoException, UsuarioEhSeuInimigoException {
+        relacionamentoService.adicionarPaquera(idSessao, paquera);
+    }
+
+    public String getPaqueras(String idSessao) throws UsuarioException {
+        Set<String> paqueras = relacionamentoService.getPaqueras(idSessao);
+        return paqueras.isEmpty() ? "{}" : "{" + String.join(",", paqueras) + "}";
+    }
+
+    public void adicionarInimigo(String idSessao, String inimigo) throws UsuarioException, UsuarioJaEstaAdicionadoComoInimigoException, UsuarioNaoPodeSerInimigoDeSiMesmoException {
+        relacionamentoService.adicionarInimigo(idSessao, inimigo);
+    }
+
+    public void removerUsuario(String idSessao) throws UsuarioException, ComunidadeNaoExisteException {
+        removerService.removerUsuario(idSessao);
+    }
+
+
+
+
 }
