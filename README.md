@@ -1,6 +1,6 @@
 # kelvin-p2-2024.2-jackut
  
-# Jackut - Milestone 1
+# Jackut - Milestone 1 e 2
 
 ## Introdução
 Jackut é uma rede social fictícia desenvolvida como parte do projeto da disciplina **Programação 2**. Nesta primeira milestone, foi implementada a base do sistema, incluindo a gestão de usuários, sessões, amizades e recados.
@@ -17,5 +17,17 @@ Jackut é uma rede social fictícia desenvolvida como parte do projeto da discip
 
 ### 4. Envio de recados
 - Permita a um usuário cadastrado do Jackut enviar um recado a qualquer outro usuário cadastrado.
+
+### 5. Criação de comunidades
+- Permita a um usuário cadastrado do Jackut criar uma comunidade. Deve ser fornecido um nome e uma descrição. O usuário passa a ser o dono da comunidade e é o responsável por gerenciar os membros.
+
+### 6. Adição de comunidades
+- Permita a um usuário cadastrado do Jackut se adicionar a uma comunidade.
+### 7. Envio de mensagens a comunidades
+- Permita a um usuário cadastrado do Jackut enviar uma mensagem a uma comunidade. Todos os usuários da comunidade a recebem.
+### 8. Criação de novos relacionamentos
+- Permita a um usuário cadastrado do Jackut estabelecer outros tipos de relacionamentos dentro da rede, além de amizade; novos tipos incluem relação de fã-ídolo, paqueras e inimizades. Cada uma tem regras específicas, explicitadas nos testes de aceitação.
+### 9. Remoção de conta
+- Permita a um usuário encerrar sua conta no Jackut. Todas as suas informações devem sumir do sistema: relacionamentos, mensagens enviadas, perfil.
 
 
