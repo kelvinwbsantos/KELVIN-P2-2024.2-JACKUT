@@ -3,54 +3,76 @@ package br.ufal.ic.p2.jackut.services;
 import br.ufal.ic.p2.jackut.models.entities.Recado;
 import br.ufal.ic.p2.jackut.models.entities.Sessao;
 import br.ufal.ic.p2.jackut.models.entities.Usuario;
-import br.ufal.ic.p2.jackut.models.exceptions.NaoHaRecadosException;
+import br.ufal.ic.p2.jackut.models.exceptions.*;
 import br.ufal.ic.p2.jackut.models.exceptions.RelacionamentoExceptions.UsuarioEhSeuInimigoException;
-import br.ufal.ic.p2.jackut.models.exceptions.UsuarioException;
-import br.ufal.ic.p2.jackut.models.exceptions.UsuarioNaoCadastradoException;
-import br.ufal.ic.p2.jackut.models.exceptions.UsuarioNaoPodeEnviarRecadoParaSiMesmoException;
 
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
-import java.io.ObjectInputStream;
-import java.io.ObjectOutputStream;
+import java.io.*;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.Queue;
 
+/**
+ * Serviço responsável pelo envio, leitura, remoção e persistência de recados privados entre usuários.
+ */
 public class RecadoService {
-    private Map<String, Recado> recados = new HashMap<>(); // Usando Map para associar login à Recado
+
+    /** Mapa que associa logins de usuários às suas caixas de recados. */
+    private Map<String, Recado> recados = new HashMap<>();
+
     private UsuarioService usuarioService;
     private SessaoService sessaoService;
     private RelacionamentoService relacionamentoService;
 
+    /**
+     * Construtor do serviço de recados.
+     *
+     * @param usuarioService Serviço de gerenciamento de usuários.
+     * @param sessaoService Serviço de gerenciamento de sessões.
+     */
     public RecadoService(UsuarioService usuarioService, SessaoService sessaoService) {
         this.usuarioService = usuarioService;
         this.sessaoService = sessaoService;
         this.recados = loadRecadosFromFile();
     }
 
-    // em RecadoService
+    /**
+     * Define o serviço de relacionamentos para verificação de inimigos.
+     *
+     * @param relacionamentoService Serviço de relacionamento.
+     */
     public void setRelacionamentoService(RelacionamentoService relacionamentoService) {
         this.relacionamentoService = relacionamentoService;
     }
 
+    /**
+     * Remove todos os recados de um usuário específico.
+     *
+     * @param login Login do usuário.
+     */
     public void removerRecado(String login) {
         recados.clear();
         saveRecadosToFile();
     }
 
-
-    public void enviarRecado(String idSessao, String destinatario, String recado) throws UsuarioException, UsuarioEhSeuInimigoException {
+    /**
+     * Envia um recado de um usuário logado para outro usuário.
+     *
+     * @param idSessao Sessão do remetente.
+     * @param destinatario Login do destinatário.
+     * @param recado Texto do recado.
+     * @throws UsuarioException Se a sessão for inválida.
+     * @throws UsuarioEhSeuInimigoException Se o destinatário for inimigo do remetente.
+     * @throws UsuarioNaoPodeEnviarRecadoParaSiMesmoException Se o remetente tentar enviar para si mesmo.
+     */
+    public void enviarRecado(String idSessao, String destinatario, String recado)
+            throws UsuarioException, UsuarioEhSeuInimigoException {
         Usuario remetente = sessaoService.getUsuarioPorSessao(idSessao);
-        Usuario recebedor = usuarioService.getUsuario(destinatario); // Deve lançar UsuarioNaoCadastradoException se não existir
+        Usuario recebedor = usuarioService.getUsuario(destinatario);
 
-        if (relacionamentoService.ehInimigo(idSessao, destinatario))
-        {
+        if (relacionamentoService.ehInimigo(idSessao, destinatario)) {
             throw new UsuarioEhSeuInimigoException(usuarioService.getAtributoUsuario(destinatario, "nome"));
         }
 
-        if (remetente == recebedor)
-        {
+        if (remetente == recebedor) {
             throw new UsuarioNaoPodeEnviarRecadoParaSiMesmoException();
         }
 
@@ -64,8 +86,16 @@ public class RecadoService {
         saveRecadosToFile();
     }
 
-    public void enviarRecadoJackut(String destinatario, String recado) throws UsuarioNaoCadastradoException {
-        Usuario recebedor = usuarioService.getUsuario(destinatario); // Deve lançar UsuarioNaoCadastradoException se não existir
+    /**
+     * Envia um recado do sistema Jackut para um usuário (sem sessão).
+     *
+     * @param destinatario Login do destinatário.
+     * @param recado Texto do recado.
+     * @throws UsuarioNaoCadastradoException Se o destinatário não existir.
+     */
+    public void enviarRecadoJackut(String destinatario, String recado)
+            throws UsuarioNaoCadastradoException {
+        Usuario recebedor = usuarioService.getUsuario(destinatario);
 
         Recado inboxDestinatario = recados.get(destinatario);
         if (inboxDestinatario == null) {
@@ -77,18 +107,24 @@ public class RecadoService {
         saveRecadosToFile();
     }
 
+    /**
+     * Lê o próximo recado disponível para o usuário logado.
+     *
+     * @param idSessao Sessão do usuário.
+     * @return Texto do recado.
+     * @throws UsuarioException Se a sessão for inválida.
+     * @throws NaoHaRecadosException Se não houver recados disponíveis.
+     */
     public String lerRecado(String idSessao) throws UsuarioException {
         Usuario usuario = sessaoService.getUsuarioPorSessao(idSessao);
         String login = usuario.getLogin();
 
         Recado inbox = recados.get(login);
-
         if (inbox == null) {
             throw new NaoHaRecadosException();
         }
 
         String mensagem = inbox.lerRecado();
-
         if (mensagem == null) {
             throw new NaoHaRecadosException();
         }
@@ -96,27 +132,36 @@ public class RecadoService {
         return mensagem;
     }
 
+    /**
+     * Salva os recados no arquivo "recados.ser".
+     */
     public void saveRecadosToFile() {
         try (ObjectOutputStream oos = new ObjectOutputStream(new FileOutputStream("recados.ser"))) {
-            oos.writeObject(recados); // Salva o mapa inteiro
+            oos.writeObject(recados);
         } catch (Exception e) {
             e.printStackTrace();
         }
     }
 
+    /**
+     * Carrega os recados do arquivo "recados.ser".
+     *
+     * @return Mapa de recados carregado do disco.
+     */
     @SuppressWarnings("unchecked")
     private Map<String, Recado> loadRecadosFromFile() {
         try (ObjectInputStream ois = new ObjectInputStream(new FileInputStream("recados.ser"))) {
-            return (Map<String, Recado>) ois.readObject(); // Carrega o mapa de comunidades
+            return (Map<String, Recado>) ois.readObject();
         } catch (Exception e) {
-            return new HashMap<>(); // Retorna um mapa vazio se não houver dados
+            return new HashMap<>();
         }
     }
 
+    /**
+     * Remove todos os recados do sistema e salva o estado limpo.
+     */
     public void zerar() {
         recados.clear();
         saveRecadosToFile();
     }
-
-
 }
